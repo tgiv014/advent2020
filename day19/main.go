@@ -9,11 +9,13 @@ import (
 	"strings"
 )
 
+type reference []int
+
 type rule struct {
-	n    int
-	s    string
-	refs [][]int
-	end  bool
+	n       int
+	c       byte
+	options []reference
+	end     bool
 }
 
 func parse(line string) rule {
@@ -27,54 +29,57 @@ func parse(line string) rule {
 	ruleString := substrings[1][1:]
 	// Check if this is an end rule
 	if ruleString[0] == '"' && ruleString[2] == '"' {
-		return rule{rulenum, string(ruleString[1]), nil, true}
+		return rule{rulenum, ruleString[1], nil, true}
 	}
 
 	// Build the list of references to other rules
 	// Note: the first layer of the array is an either-or situation
 	// Only one of the rules has to pass
-	refs := make([][]int, 0)
-	ruleOrs := strings.Split(ruleString, "|")
-	for _, ruleOr := range ruleOrs {
-		// The other rules that must be true in order in the OR'd rules
-		subruleRefs := make([]int, 0)
-		subnums := strings.Split(ruleOr, " ")
-		for _, subnum := range subnums {
-			if len(subnum) == 0 {
+	newOptions := []reference{}
+	options := strings.Split(ruleString, "|")
+	for _, option := range options {
+
+		refs := []int{}
+		splitrefs := strings.Split(option, " ")
+		for _, refnum := range splitrefs {
+			if len(refnum) == 0 {
 				continue
 			}
-			num, err := strconv.Atoi(subnum)
+			num, err := strconv.Atoi(refnum)
 			if err != nil {
 				log.Fatal(err)
 			}
-			subruleRefs = append(subruleRefs, num)
+			refs = append(refs, num)
 		}
-		refs = append(refs, subruleRefs)
+		newOptions = append(newOptions, refs)
 	}
-	return rule{rulenum, "", refs, false}
+	return rule{rulenum, 0, newOptions, false}
 }
 
 func match(s string, rules map[int]*rule, rulenum int, p int) []int {
-	// If we know we are checking an end node, return p+1 if it matches
-	if rules[rulenum].end && string(s[p]) == rules[rulenum].s {
-		return []int{p + 1}
-	}
 	// No matches if checking a char out of range
 	if p >= len(s) {
 		return []int{}
 	}
-	matches := []int{}
-	// We will check both sub-rules and append matches from both
-	for _, ruleOr := range rules[rulenum].refs {
-		// Always start with the given position
-		positions := []int{p}
 
-		// Check the required subrules
-		for _, subrule := range ruleOr {
+	// If we know we are checking an end node, return p+1 if it matches
+	// This ultimately drives the advance in position as we build matches
+	if rules[rulenum].end {
+		// return []int{p + 1}
+		if s[p] == rules[rulenum].c {
+			return []int{p + 1}
+		} else {
+			return []int{}
+		}
+	}
+
+	matches := []int{}
+	for _, option := range rules[rulenum].options {
+		positions := []int{p}
+		for _, ref := range option {
 			newPositions := []int{}
 			for _, pos := range positions {
-				// Check if this subrule matches, evaluate any resulting matches
-				mcs := match(s, rules, subrule, pos)
+				mcs := match(s, rules, ref, pos)
 				for _, mc := range mcs {
 					newPositions = append(newPositions, mc)
 				}
@@ -95,15 +100,19 @@ func main() {
 		log.Fatal(err)
 	}
 	rules := make(map[int]*rule)
-	doneProcessingRules := false
-	scanner := bufio.NewScanner(f)
 	strings := make([]string, 0)
+
+	doneProcessingRules := false
+
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
+
 		if len(line) == 0 && !doneProcessingRules {
 			doneProcessingRules = true
 			continue
 		}
+
 		if !doneProcessingRules {
 			r := parse(line)
 			rules[r.n] = &r

@@ -11,10 +11,9 @@ import (
 )
 
 type ingredient struct {
-	name             string
-	nFoodsIn         int
-	allergenMentions map[string]int
-	all              *allergen
+	name     string
+	nFoodsIn int
+	all      *allergen
 }
 
 type allergen struct {
@@ -54,7 +53,7 @@ func main() {
 		for _, ing := range primaryIngredients {
 			// Only insert new ingredient to the `all` list if needed
 			if _, ok := allIngredients[ing]; !ok {
-				allIngredients[ing] = &ingredient{ing, 0, make(map[string]int), nil}
+				allIngredients[ing] = &ingredient{ing, 0, nil}
 			}
 			myIngredients = append(myIngredients, allIngredients[ing])
 			allIngredients[ing].nFoodsIn++
@@ -75,13 +74,6 @@ func main() {
 	}
 
 	for _, fd := range foods {
-		for _, ing := range fd.ingredients {
-			for _, allergen := range fd.allergens {
-				ing.allergenMentions[allergen.name]++
-			}
-		}
-	}
-	for _, fd := range foods {
 		for _, allergen := range fd.allergens {
 			for _, ing := range fd.ingredients {
 				allergen.ingredientMentions[ing.name]++
@@ -89,46 +81,49 @@ func main() {
 		}
 	}
 
+	// Loop until all allergens have been assigned ingredients
 	nFound := 0
 	for nFound < len(allAllergens) {
 		for _, all := range allAllergens {
+			// Skip if already assigned
 			if all.ing != nil {
 				continue
 			}
-			// Get max number of mentions
+			// Get max number of mentions for this allergen
 			max := 0
 			for _, v := range all.ingredientMentions {
 				if v > max {
 					max = v
 				}
 			}
-			// See if max happens only once
+			// See if there is only one maximum
 			nMaximums := 0
-			for _, v := range all.ingredientMentions {
+			var maxKey string
+			for k, v := range all.ingredientMentions {
 				if v == max {
 					nMaximums++
+					maxKey = k
 				}
 			}
-			// Very likely that we've found the correct match now
-			if nMaximums == 1 {
-				nFound++
-				for k, v := range all.ingredientMentions {
-					if v == max {
-						all.ing = allIngredients[k]
-						allIngredients[k].all = all
-						// Delete the newly found ingredient from other allergens mention lists
-						for ak, av := range allAllergens {
-							if ak == all.name {
-								continue
-							}
-							delete(av.ingredientMentions, k)
-						}
-						break
-					}
-				}
+			// If there is more than one maximum, skip for now
+			if nMaximums > 1 {
+				continue
 			}
+			// Success!
+			nFound++
+			all.ing = allIngredients[maxKey]
+			allIngredients[maxKey].all = all
+			// Delete the newly found ingredient from other allergens' mention lists
+			for ak, av := range allAllergens {
+				if ak == all.name {
+					continue
+				}
+				delete(av.ingredientMentions, maxKey)
+			}
+			break
 		}
 	}
+
 	for _, all := range allAllergens {
 		fmt.Println(all.name, "->", all.ing.name)
 	}
